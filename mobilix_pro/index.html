@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MobiliX Pro | Atölyenizin Dijital Beyni</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        :root { --orange: #ed8936; --dark: #0f172a; --panel: #1e293b; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--dark); color: white; overflow: hidden; }
+        
+        /* Splash Screen */
+        #splash { position: fixed; inset: 0; background: var(--dark); display: flex; flex-direction: column; 
+                  justify-content: center; align-items: center; z-index: 1000; transition: 0.8s; }
+        .logo-text { font-size: 3rem; font-weight: 800; }
+        .logo-text span { color: var(--orange); }
+        .loader { width: 40px; height: 40px; border: 4px solid var(--orange); border-top-color: transparent; 
+                  border-radius: 50%; animation: spin 1s infinite; margin-top: 20px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Layout */
+        header { height: 60px; background: var(--panel); display: flex; align-items: center; padding: 0 20px; 
+                 justify-content: space-between; border-bottom: 1px solid #334155; }
+        main { display: flex; height: calc(100vh - 60px); }
+        
+        #controls { width: 300px; background: var(--panel); padding: 20px; border-right: 1px solid #334155; 
+                    overflow-y: auto; z-index: 10; }
+        #canvas-container { flex: 1; position: relative; cursor: move; }
+
+        /* UI Elements */
+        .input-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-size: 0.9rem; color: #94a3b8; }
+        input[type="range"] { width: 100%; accent-color: var(--orange); }
+        button { width: 100%; padding: 12px; border: none; border-radius: 6px; cursor: pointer; 
+                 font-weight: 600; margin-bottom: 10px; transition: 0.3s; }
+        .btn-primary { background: var(--orange); color: white; }
+        .btn-secondary { background: #334155; color: white; }
+        button:hover { opacity: 0.9; transform: translateY(-2px); }
+
+        .stats { background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-top: 20px; }
+        .price { font-size: 1.5rem; color: var(--orange); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="splash">
+    <div class="logo-text">Mobili<span>X</span> Pro</div>
+    <div class="loader"></div>
+</div>
+
+<header>
+    <div class="logo-text" style="font-size: 1.5rem;">Mobili<span>X</span></div>
+    <div>Atölyenizin Dijital Beyni</div>
+</header>
+
+<main>
+    <aside id="controls">
+        <h3>Tasarım Ayarları</h3>
+        
+        <div class="input-group">
+            <label>Genişlik (cm): <span id="w-val">120</span></label>
+            <input type="range" id="w" min="60" max="240" value="120">
+        </div>
+
+        <div class="input-group">
+            <label>Yükseklik (cm): <span id="h-val">200</span></label>
+            <input type="range" id="h" min="100" max="260" value="200">
+        </div>
+
+        <div class="input-group">
+            <label>Derinlik (cm): <span id="d-val">60</span></label>
+            <input type="range" id="d" min="30" max="80" value="60">
+        </div>
+
+        <div class="stats">
+            <label>Tahmini Maliyet</label>
+            <div class="price" id="price-tag">₺4.250</div>
+        </div>
+
+        <hr style="border: 0.5px solid #334155; margin: 20px 0;">
+
+        <button class="btn-primary" onclick="generatePDF()">PDF Kesim Listesi Al</button>
+        <button class="btn-secondary" onclick="alert('AR Modu Hazırlanıyor...')">Odanda Gör (AR)</button>
+        <button class="btn-secondary" style="background: #059669;" onclick="sendWhatsApp()">WhatsApp'a Gönder</button>
+    </aside>
+
+    <div id="canvas-container"></div>
+</main>
+
+<script>
+    // 1. Splash Screen Kontrolü
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            document.getElementById('splash').style.opacity = '0';
+            setTimeout(() => document.getElementById('splash').style.display = 'none', 800);
+        }, 1500);
+    });
+
+    // 2. 3D Sahne Kurulumu
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0f172a);
+
+    const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+    camera.position.set(150, 150, 250);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
+
+    // Işıklandırma
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(100, 200, 100);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040, 2));
+
+    // Mobilya Grubu
+    const furnitureGroup = new THREE.Group();
+    scene.add(furnitureGroup);
+
+    function createFurniture() {
+        while(furnitureGroup.children.length > 0) furnitureGroup.remove(furnitureGroup.children[0]);
+
+        const w = parseFloat(document.getElementById('w').value);
+        const h = parseFloat(document.getElementById('h').value);
+        const d = parseFloat(document.getElementById('d').value);
+
+        // Malzeme
+        const material = new THREE.MeshStandardMaterial({ color: 0xed8936, roughness: 0.5 });
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+
+        // Gövde (Basit Temsil)
+        const geometry = new THREE.BoxGeometry(w, h, d);
+        const mesh = new THREE.Mesh(geometry, material);
+        
+        // Kenar Çizgileri
+        const edges = new THREE.EdgesGeometry(geometry);
+        const line = new THREE.LineSegments(edges, lineMaterial);
+        
+        furnitureGroup.add(mesh);
+        furnitureGroup.add(line);
+
+        // Fiyat Güncelle
+        document.getElementById('price-tag').innerText = `₺${Math.floor(w * h * 0.15 + 500)}`;
+    }
+
+    // Input Kontrolleri
+    ['w', 'h', 'd'].forEach(id => {
+        document.getElementById(id).addEventListener('input', (e) => {
+            document.getElementById(`${id}-val`).innerText = e.target.value;
+            createFurniture();
+        });
+    });
+
+    // Animasyon
+    function animate() {
+        requestAnimationFrame(animate);
+        furnitureGroup.rotation.y += 0.005;
+        renderer.render(scene, camera);
+    }
+
+    // 3. Raporlama (PDF)
+    window.generatePDF = function() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        doc.setFontSize(20);
+        doc.text("MobiliX Pro Teknik Rapor", 20, 20);
+        
+        const w = document.getElementById('w').value;
+        const h = document.getElementById('h').value;
+        const d = document.getElementById('d').value;
+
+        doc.autoTable({
+            startY: 40,
+            head: [['Parça Adı', 'Adet', 'Ölçü (cm)', 'Malzeme']],
+            body: [
+                ['Yan Paneller', '2', `${h} x ${d}`, '18mm Suntalam'],
+                ['Alt/Üst Tablo', '2', `${w} x ${d}`, '18mm Suntalam'],
+                ['Arkalık', '1', `${w} x ${h}`, '3mm MDF']
+            ],
+            theme: 'grid',
+            headStyles: { fillColor: [237, 137, 54] }
+        });
+
+        doc.save(`MobiliX_Siparis_${Date.now()}.pdf`);
+    };
+
+    window.sendWhatsApp = function() {
+        const msg = encodeURIComponent("MobiliX Pro üzerinden yeni bir tasarım hazırladım. Teknik detayları iletiyorum.");
+        window.open(`https://wa.me/?text=${msg}`);
+    };
+
+    // Başlat
+    createFurniture();
+    animate();
+
+    // Pencere Boyutu Değişimi
+    window.addEventListener('resize', () => {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+</script>
+
+</body>
+</html>
